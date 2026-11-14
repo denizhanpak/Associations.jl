@@ -87,7 +87,8 @@ documentation). It is not exported; access it as `Associations.subset_entropies`
     - [`GaussianDecomposition`](@ref): closed-form Gaussian entropies from the
         covariance matrix of all inputs.
     `est.definition` may be any `MultivariateInformationMeasure` with a `base` field, such
-    as every [`HigherOrderInformationMeasure`](@ref).
+    as every [`HigherOrderInformationMeasure`](@ref) and
+    [`PartialInformationDecomposition`](@ref).
 - `x...`: the input variables, each an `AbstractVector` or a `StateSpaceSet`, all with the
     same number of samples.
 

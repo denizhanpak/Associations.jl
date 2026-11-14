@@ -16,6 +16,12 @@ From version v4.0 onwards, this package has been renamed to to Associations.jl.
 - New measure `PartialInformationDecomposition` for 2 to 5 sources, with the redundancy
   functions `IMin` and `IMMI`, returning a `PIDResult`. `PIDAtom` gives a single atom as a
   number, for use with `SurrogateAssociationTest`.
+- Documented extension API for the partial information decomposition, so that other
+  packages can add redundancy functions: `Associations.pid_redundancies`,
+  `Associations.RedundancyLattice`, `Associations.redundancy_lattice`,
+  `Associations.lattice_node_vectors` and `Associations.mobius_inversion` (unexported, but
+  stable). `mobius_inversion` now accepts any element type supporting `+`, `-` and `zero`,
+  e.g. per-sample vectors.
 
 # 4.7.2
 

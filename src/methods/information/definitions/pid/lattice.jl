@@ -1,5 +1,7 @@
 # ----------------------------------------------------------------------------------------
-# The redundancy lattice of Williams & Beer (2010), for internal use.
+# The redundancy lattice of Williams & Beer (2010). `RedundancyLattice`,
+# `redundancy_lattice`, `mobius_inversion` and `lattice_node_vectors` are part of the
+# documented extension API; the other functions here are internal.
 #
 # A node is an antichain α = {A₁, …, Aₖ} of nonempty subsets of the sources, none of which
 # contains another. Nodes are ordered by
@@ -12,6 +14,37 @@
 
 const MAX_PID_SOURCES = 5
 
+"""
+    Associations.RedundancyLattice
+
+The redundancy lattice of [Williams2010](@citet) for a given number of sources. Obtain one
+with [`Associations.redundancy_lattice`](@ref); do not construct or modify it directly.
+
+A node ``\\alpha = \\{A_1, \\ldots, A_k\\}`` is a collection (an antichain) of nonempty
+source sets, none of which contains another, e.g. ``\\{1\\}\\{23\\}``. Nodes are ordered by
+``\\alpha \\preceq \\beta`` if and only if every ``B \\in \\beta`` contains some
+``A \\in \\alpha``.
+
+This type is part of the extension API (see the "Extending Associations" page of the
+documentation). It is not exported. The fields below are stable and may be read directly.
+
+## Fields
+
+- `nsources::Int`: the number of sources `n`.
+- `nodes::Vector{Vector{UInt}}`: the `m` nodes. Each node is a vector of source-set
+    bitmasks, sorted in increasing order, where source `i` is bit `i - 1`
+    (`UInt(1) << (i - 1)`); e.g. ``\\{1\\}\\{23\\}`` is `UInt[0b001, 0b110]`. Use
+    [`Associations.lattice_node_vectors`](@ref) to convert a node to source indices. A node
+    is referred to by its position `k` in `nodes`; the positions are the same every time
+    the lattice for `n` sources is built, but carry no other meaning.
+- `index::Dict{Vector{UInt}, Int}`: the position `k` of each node, `nodes[index[node]] == node`.
+- `below::BitMatrix`: an `m × m` matrix with `below[i, j] == true` if and only if node `i`
+    is strictly below node `j` (``\\alpha_i \\prec \\alpha_j``). This is the full order
+    relation, not only the covering relation.
+- `order::Vector{Int}`: a permutation of `1:m` in which every node comes after all the
+    nodes below it. The first entry is the bottom node ``\\{1\\}\\{2\\} \\ldots \\{n\\}``
+    and the last the top node ``\\{12 \\ldots n\\}``.
+"""
 struct RedundancyLattice
     nsources::Int
     # Each node is a sorted vector of source-subset bitmasks.
@@ -72,19 +105,57 @@ end
 const REDUNDANCY_LATTICES = Dict{Int, RedundancyLattice}()
 const REDUNDANCY_LATTICES_LOCK = ReentrantLock()
 
-# The lattice for n sources, built once and cached (the 5-source lattice has 7579 nodes).
+"""
+    Associations.redundancy_lattice(n::Int) → RedundancyLattice
+
+The [`Associations.RedundancyLattice`](@ref) of `n` sources, for `1 ≤ n ≤ 5`. It has 1, 4,
+18, 166 and 7579 nodes for `n` = 1, …, 5.
+
+Each lattice is built once and cached (safely across threads), so every call with the same
+`n` returns the same object; it must not be modified.
+
+This function is part of the extension API (see the "Extending Associations" page of the
+documentation). It is not exported; access it as `Associations.redundancy_lattice`.
+"""
 function redundancy_lattice(n::Int)
     lock(REDUNDANCY_LATTICES_LOCK) do
         get!(() -> RedundancyLattice(n), REDUNDANCY_LATTICES, n)
     end
 end
 
-# Partial information atoms from the redundancy values of every node.
+"""
+    Associations.mobius_inversion(lattice::RedundancyLattice, r::AbstractVector{T}) → Vector{T}
+
+The partial information atoms ``\\Pi`` from the redundancies `r` of every node of
+`lattice`: `r[k]` is the redundancy of `lattice.nodes[k]`, and the result has the atom of
+`lattice.nodes[k]` at position `k`. The atoms solve
+
+```math
+r_j = \\Pi_j + \\sum_{i \\,:\\, \\alpha_i \\prec \\alpha_j} \\Pi_i
+```
+
+for every node ``j``.
+
+`r` must have one-based indices and `length(r) == length(lattice.nodes)`. Its elements may
+be of any type that supports `a + b`, `a - b` and `zero(a)`: real numbers, or, e.g., one
+`Vector{Float64}` of per-sample values per node. The inversion is linear, so inverting
+per-sample (local) redundancies and averaging the resulting atoms gives the inversion of
+the averaged redundancies.
+
+One call checks all ``m^2`` pairs of nodes, for `m = length(lattice.nodes)` (7579 for 5
+sources), and does one `+` per pair of comparable nodes. With vector-valued elements, a
+single call therefore replaces one call per sample.
+
+This function is part of the extension API (see the "Extending Associations" page of the
+documentation). It is not exported; access it as `Associations.mobius_inversion`.
+"""
 function mobius_inversion(lattice::RedundancyLattice, redundancies::AbstractVector{T}) where T
-    atoms = zeros(T, length(redundancies))
     m = length(redundancies)
+    atoms = Vector{T}(undef, m)
     for j in lattice.order
-        s = zero(T)
+        # `zero(redundancies[j])` rather than `zero(T)`, so that abstract and array element
+        # types work.
+        s = zero(redundancies[j])
         for i in 1:m
             lattice.below[i, j] && (s += atoms[i])
         end
@@ -112,4 +183,15 @@ end
 
 # Literature notation: {1}{23} for the antichain {{1}, {2, 3}}.
 lattice_node_string(node) = join("{" * join(mask_to_indices(A)) * "}" for A in node)
+"""
+    Associations.lattice_node_vectors(node) → Vector{Vector{Int}}
+
+The source sets of a lattice node (an element of `lattice.nodes`, see
+[`Associations.RedundancyLattice`](@ref)), each as a sorted vector of source indices,
+e.g. `[[1], [2, 3]]` for ``\\{1\\}\\{23\\}``. The sets are in the order of their bitmasks
+in `node`.
+
+This function is part of the extension API (see the "Extending Associations" page of the
+documentation). It is not exported; access it as `Associations.lattice_node_vectors`.
+"""
 lattice_node_vectors(node) = [mask_to_indices(A) for A in node]

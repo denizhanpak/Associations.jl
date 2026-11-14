@@ -16,6 +16,41 @@ about the target ``T``.
 
 - [`IMin`](@ref): Williams & Beer's ``I_{min}``.
 - [`IMMI`](@ref): the minimum mutual information, ``I_{MMI}``.
+
+## Implementing a new redundancy function
+
+Another package can add a redundancy function without changing Associations.jl:
+
+1. Define a subtype, `struct MyRedundancy <: RedundancyFunction end` (it may have
+    fields).
+2. Extend [`Associations.pid_redundancies`](@ref) for it and for each estimator type it
+    supports, returning the redundancy of every node of the redundancy lattice.
+
+Then `PartialInformationDecomposition(MyRedundancy())` works with [`association`](@ref)
+(returning a [`PIDResult`](@ref)), with [`PIDAtom`](@ref) and with
+[`SurrogateAssociationTest`](@ref), for every estimator for which a method exists:
+[`JointProbabilities`](@ref), [`EntropyDecomposition`](@ref), [`MIDecomposition`](@ref)
+or [`GaussianDecomposition`](@ref). For estimators it does not support, add a method that
+throws an informative `ArgumentError`; otherwise the user gets a `MethodError`.
+The atoms are computed from the redundancies by [`Associations.mobius_inversion`](@ref),
+and `show` for a `PIDResult` prints the redundancy function by its type name.
+
+```julia
+using Associations
+import Associations: RedundancyFunction, pid_redundancies, lattice_node_vectors
+
+struct MyRedundancy <: RedundancyFunction end
+
+function pid_redundancies(::MyRedundancy, est::JointProbabilities, lattice, x...)
+    sources, target = x[1:end-1], x[end]
+    return map(lattice.nodes) do node
+        source_sets = lattice_node_vectors(node) # e.g. [[1], [2, 3]]
+        my_redundancy(est, source_sets, sources, target) # a Float64
+    end
+end
+```
+
+See the "Extending Associations" page of the documentation for the full contract.
 """
 abstract type RedundancyFunction end
 
@@ -273,6 +308,52 @@ function source_target_mi(est::MIDecomposition, x...)
     end
 end
 
+"""
+    Associations.pid_redundancies(r::RedundancyFunction, est, lattice::RedundancyLattice, x...) → Vector{<:Real}
+
+Return the redundancy ``I_\\cap(\\alpha; T)`` of every node ``\\alpha`` of `lattice`,
+using the redundancy function `r` and the estimator `est`. Element `k` of the result is the
+redundancy of the node `lattice.nodes[k]`.
+
+This is the function to extend to add a new [`RedundancyFunction`](@ref) (see the section
+"Implementing a new redundancy function" there). It is not exported; access it as
+`Associations.pid_redundancies`, and extend it with
+`function Associations.pid_redundancies(r::MyRedundancy, est::SomeEstimator, lattice, x...)`.
+
+## Arguments
+
+- `r`: the redundancy function, `est.definition.redundancy`.
+- `est`: the estimator given to [`association`](@ref): a [`JointProbabilities`](@ref),
+    [`EntropyDecomposition`](@ref), [`MIDecomposition`](@ref) or
+    [`GaussianDecomposition`](@ref) whose `definition` is a
+    [`PartialInformationDecomposition`](@ref). The unit of the redundancies is
+    `est.definition.base` (bits for the default base 2). For example,
+    `probabilities(est.discretization, x...)` gives the joint probability mass function
+    of a `JointProbabilities` estimator, and [`Associations.subset_entropies`](@ref)`(est, x...)`
+    gives joint entropies of subsets of the inputs (the target has index `length(x)`).
+- `lattice`: the [`Associations.RedundancyLattice`](@ref) of `length(x) - 1` sources,
+    from [`Associations.redundancy_lattice`](@ref). Use
+    [`Associations.lattice_node_vectors`](@ref) to read a node as source sets.
+- `x...`: the inputs as given to `association`: the sources `x[1:end-1]`, then the target
+    `x[end]`. The number of inputs has already been checked (3 to 6).
+
+## Returns
+
+A `Vector{T}`, with a concrete `T <: Real` (normally `Float64`), of length
+`length(lattice.nodes)`, in the order of `lattice.nodes`. Associations.jl then computes the
+atoms with [`Associations.mobius_inversion`](@ref) and returns a [`PIDResult`](@ref) that
+stores both the redundancies and the atoms.
+
+## Built-in methods
+
+- `pid_redundancies(::IMin, est::JointProbabilities, lattice, x...)`; other estimators
+    throw an `ArgumentError`.
+- `pid_redundancies(::IMMI, est, lattice, x...)` for every PID estimator.
+
+A new method may call these, e.g. `Associations.pid_redundancies(IMMI(), est, lattice, x...)`.
+"""
+function pid_redundancies end
+
 function pid_redundancies(::IMMI, est, lattice, x...)
     mi = source_target_mi(est, x...)
     return [minimum(mi, node) for node in lattice.nodes]
@@ -328,6 +409,12 @@ function pid_association(est, x...)
     verify_number_of_inputs_vars(est.definition, length(x))
     lattice = redundancy_lattice(length(x) - 1)
     r = pid_redundancies(est.definition.redundancy, est, lattice, x...)
+    if length(r) != length(lattice.nodes)
+        throw(ArgumentError(
+            "`pid_redundancies` for $(nameof(typeof(est.definition.redundancy))) must " *
+            "return one value per lattice node ($(length(lattice.nodes))); got $(length(r))."
+        ))
+    end
     return PIDResult(est.definition, lattice, r, mobius_inversion(lattice, r))
 end
 
