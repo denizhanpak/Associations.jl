@@ -9,6 +9,7 @@ include("transfer_entropies/transfer_entropies.jl")
 include("secmi/secmi.jl")
 include("higher_order/higher_order.jl")
 include("pid/pid.jl")
+include("extension_api.jl")
 
 # Estimators of the information measures.
 include("estimators/estimators.jl")

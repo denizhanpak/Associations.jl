@@ -11,6 +11,8 @@ From version v4.0 onwards, this package has been renamed to to Associations.jl.
   O-information.
 - New estimator `GaussianDecomposition`: closed-form Gaussian entropies, optionally after a
   Gaussian copula transform.
+- Documented extension API for higher-order measures: `Associations.subset_entropies` and
+  `Associations.entropy_combination` (unexported, but stable), e.g. for local measures.
 - New measure `PartialInformationDecomposition` for 2 to 5 sources, with the redundancy
   functions `IMin` and `IMMI`, returning a `PIDResult`. `PIDAtom` gives a single atom as a
   number, for use with `SurrogateAssociationTest`.

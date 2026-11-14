@@ -23,6 +23,7 @@ pages = [
         "api/information_single_variable_api.md",
         "api/information_multivariate_api.md",
         "api/cross_map_api.md",
+        "api/extension_api.md",
     ],
     "Examples" => [
         "Associations" => "examples/examples_associations.md",
